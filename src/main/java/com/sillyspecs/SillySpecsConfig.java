@@ -3,17 +3,20 @@ package com.sillyspecs;
 import net.runelite.client.config.Config;
 import net.runelite.client.config.ConfigGroup;
 import net.runelite.client.config.ConfigItem;
+import net.runelite.client.config.Range;
 
 @ConfigGroup("sillyspecs")
 public interface SillySpecsConfig extends Config
 {
+	@Range(min = 0, max = 100)
 	@ConfigItem(
-		keyName = "greeting",
-		name = "Welcome Greeting",
-		description = "The message to show to the user when they login"
+			keyName = "customVolume",
+			name = "Sound Volume",
+			description = "Adjust the volume of the custom special attack sounds.",
+			position = 1
 	)
-	default String greeting()
+	default int customVolume()
 	{
-		return "Hello";
+		return 50;
 	}
 }
