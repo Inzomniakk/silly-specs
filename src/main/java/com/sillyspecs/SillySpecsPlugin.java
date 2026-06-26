@@ -1,5 +1,6 @@
 package com.sillyspecs;
 
+import com.google.inject.Inject;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.events.SoundEffectPlayed;
 import net.runelite.client.eventbus.Subscribe;
@@ -8,76 +9,104 @@ import net.runelite.client.plugins.PluginDescriptor;
 import javax.sound.sampled.*;
 import java.io.BufferedInputStream;
 import java.io.InputStream;
+import java.util.Set;
 import com.google.inject.Provides;
-import javax.inject.Inject;
 import net.runelite.client.config.ConfigManager;
 
 @Slf4j
-@PluginDescriptor(
-		name = "Silly Specs",
-		description = "Add some silliness to your special attacks!"
-)
+@PluginDescriptor(name = "SillySpecs")
 public class SillySpecsPlugin extends Plugin
 {
-	@Inject
-	private SillySpecsConfig config;
-
 	@Provides
 	SillySpecsConfig provideConfig(ConfigManager configManager)
 	{
 		return configManager.getConfig(SillySpecsConfig.class);
 	}
-	private static final int FANG_SPEC_PART_1 = 9367;
-	private static final int FANG_SPEC_PART_2 = 9366;
-	private static final int FANG_SPEC_PART_3 = 9365;
-	private long lastPlayed = 0;
+	@Inject
+	private SillySpecsConfig config;
+
+	private static final long COOLDOWN_MS = 500;
+
+	private static final Set<Integer> FANG_SPEC_IDS = Set.of(9365, 9366, 9367);
+	private static final Set<Integer> CLAW_SPEC_IDS = Set.of(4138, 4139, 4140);
+	private static final int DBAXE_SPEC_ID = 2538;
+
+	private long lastFangTime = 0;
+	private long lastClawTime = 0;
+	private long lastDbaxeTime = 0;
 
 	@Subscribe
 	public void onSoundEffectPlayed(SoundEffectPlayed event)
 	{
 		int soundId = event.getSoundId();
-		if (soundId == 9367 || soundId == 9366 || soundId == 9365)
-		{
+
+		String fileName = null;
+		long lastTime = 0;
+
+		if (CLAW_SPEC_IDS.contains(soundId)) {
+			fileName = "dclaw_spec.wav";
+			lastTime = lastClawTime;
+		} else if (FANG_SPEC_IDS.contains(soundId)) {
+			fileName = "fang_spec.wav";
+			lastTime = lastFangTime;
+		} else if (soundId == DBAXE_SPEC_ID) {
+			fileName = "dbaxe_spec.wav";
+			lastTime = lastDbaxeTime;
+		}
+
+		if (fileName != null) {
 			event.consume();
 
-			long currentTime = System.currentTimeMillis();
-			if (currentTime - lastPlayed > 500)
-			{
-				log.info("Triggering custom sound for ID: {}", soundId);
-				playCustomSound("fang_spec.wav");
-				lastPlayed = currentTime;
+			if (System.currentTimeMillis() - lastTime > COOLDOWN_MS) {
+				updateLastTime(soundId, System.currentTimeMillis());
+				playCustomSound(fileName);
 			}
 		}
 	}
 
+	private void updateLastTime(int soundId, long time) {
+		if (CLAW_SPEC_IDS.contains(soundId)) lastClawTime = time;
+		else if (FANG_SPEC_IDS.contains(soundId)) lastFangTime = time;
+		else if (soundId == DBAXE_SPEC_ID) lastDbaxeTime = time;
+	}
+
 	private void playCustomSound(String fileName)
 	{
-		try
-		{
-			InputStream audioSrc = getClass().getResourceAsStream("/" + fileName);
-			if (audioSrc == null)
+		new Thread(() -> {
+			try (InputStream is = getClass().getResourceAsStream("/" + fileName))
 			{
-				log.warn("Custom sound file not found: " + fileName);
-				return;
+				if (is == null) {
+					log.error("Could not find file: /{}", fileName);
+					return;
+				}
+
+				try (BufferedInputStream bis = new BufferedInputStream(is);
+					 AudioInputStream ais = AudioSystem.getAudioInputStream(bis))
+				{
+					Clip clip = AudioSystem.getClip();
+					clip.open(ais);
+					
+					if (clip.isControlSupported(FloatControl.Type.MASTER_GAIN))
+					{
+						FloatControl gainControl = (FloatControl) clip.getControl(FloatControl.Type.MASTER_GAIN);
+						float volume = config.customVolume() / 100f;
+						float dB = (float) (Math.log10(volume <= 0.0 ? 0.0001 : volume) * 20.0);
+						gainControl.setValue(dB);
+					}
+
+					clip.addLineListener(e -> {
+						if (e.getType() == LineEvent.Type.STOP) {
+							clip.close();
+						}
+					});
+
+					clip.start();
+				}
 			}
-
-			InputStream bufferedIn = new BufferedInputStream(audioSrc);
-			AudioInputStream audioStream = AudioSystem.getAudioInputStream(bufferedIn);
-			Clip clip = AudioSystem.getClip();
-			clip.open(audioStream);
-
-			FloatControl volumeControl = (FloatControl) clip.getControl(FloatControl.Type.MASTER_GAIN);
-
-			float volume = config.customVolume() / 100f;
-			float dB = (float) (Math.log(volume == 0 ? 0.0001 : volume) / Math.log(10.0) * 20.0);
-
-			volumeControl.setValue(dB);
-
-			clip.start();
-		}
-		catch (Exception e)
-		{
-			log.error("Failed to play custom sound: " + fileName, e);
-		}
+			catch (Exception e)
+			{
+				log.error("Error playing custom sound: " + fileName, e);
+			}
+		}).start();
 	}
 }
