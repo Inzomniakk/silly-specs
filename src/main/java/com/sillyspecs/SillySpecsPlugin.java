@@ -1,32 +1,32 @@
 package com.sillyspecs;
 
 import com.google.inject.Inject;
+import com.google.inject.Provides;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.events.SoundEffectPlayed;
+import net.runelite.client.audio.AudioPlayer;
+import net.runelite.client.config.ConfigManager;
 import net.runelite.client.eventbus.Subscribe;
 import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDescriptor;
-import javax.sound.sampled.*;
-import java.io.BufferedInputStream;
+
+import javax.sound.sampled.LineUnavailableException;
+import javax.sound.sampled.UnsupportedAudioFileException;
+import java.io.IOException;
 import java.io.InputStream;
 import java.util.Set;
-import com.google.inject.Provides;
-import net.runelite.client.config.ConfigManager;
 
 @Slf4j
 @PluginDescriptor(name = "SillySpecs")
 public class SillySpecsPlugin extends Plugin
 {
-	@Provides
-	SillySpecsConfig provideConfig(ConfigManager configManager)
-	{
-		return configManager.getConfig(SillySpecsConfig.class);
-	}
+	@Inject
+	private AudioPlayer audioPlayer;
+
 	@Inject
 	private SillySpecsConfig config;
 
 	private static final long COOLDOWN_MS = 500;
-
 	private static final Set<Integer> FANG_SPEC_IDS = Set.of(9365, 9366, 9367);
 	private static final Set<Integer> CLAW_SPEC_IDS = Set.of(4138, 4139, 4140);
 	private static final int DBAXE_SPEC_ID = 2538;
@@ -35,11 +35,15 @@ public class SillySpecsPlugin extends Plugin
 	private long lastClawTime = 0;
 	private long lastDbaxeTime = 0;
 
-	@Subscribe
-	public void onSoundEffectPlayed(SoundEffectPlayed event)
+	@Provides
+	SillySpecsConfig provideConfig(ConfigManager configManager)
 	{
-		int soundId = event.getSoundId();
+		return configManager.getConfig(SillySpecsConfig.class);
+	}
 
+	@Subscribe
+	public void onSoundEffectPlayed(SoundEffectPlayed event) throws UnsupportedAudioFileException, LineUnavailableException, IOException {
+		int soundId = event.getSoundId();
 		String fileName = null;
 		long lastTime = 0;
 
@@ -56,7 +60,6 @@ public class SillySpecsPlugin extends Plugin
 
 		if (fileName != null) {
 			event.consume();
-
 			if (System.currentTimeMillis() - lastTime > COOLDOWN_MS) {
 				updateLastTime(soundId, System.currentTimeMillis());
 				playCustomSound(fileName);
@@ -70,43 +73,21 @@ public class SillySpecsPlugin extends Plugin
 		else if (soundId == DBAXE_SPEC_ID) lastDbaxeTime = time;
 	}
 
-	private void playCustomSound(String fileName)
-	{
-		new Thread(() -> {
-			try (InputStream is = getClass().getResourceAsStream("/" + fileName))
-			{
-				if (is == null) {
-					log.error("Could not find file: /{}", fileName);
-					return;
-				}
+	private void playCustomSound(String fileName) throws UnsupportedAudioFileException, LineUnavailableException, IOException {
+		// AudioPlayer.play consumes the InputStream and handles its own buffering and volume
+		InputStream is = getClass().getResourceAsStream("/" + fileName);
+		if (is == null)
+		{
+			log.error("Could not find file: /{}", fileName);
+			return;
+		}
 
-				try (BufferedInputStream bis = new BufferedInputStream(is);
-					 AudioInputStream ais = AudioSystem.getAudioInputStream(bis))
-				{
-					Clip clip = AudioSystem.getClip();
-					clip.open(ais);
-					
-					if (clip.isControlSupported(FloatControl.Type.MASTER_GAIN))
-					{
-						FloatControl gainControl = (FloatControl) clip.getControl(FloatControl.Type.MASTER_GAIN);
-						float volume = config.customVolume() / 100f;
-						float dB = (float) (Math.log10(volume <= 0.0 ? 0.0001 : volume) * 20.0);
-						gainControl.setValue(dB);
-					}
+		float volume = config.customVolume() / 100f;
 
-					clip.addLineListener(e -> {
-						if (e.getType() == LineEvent.Type.STOP) {
-							clip.close();
-						}
-					});
-
-					clip.start();
-				}
-			}
-			catch (Exception e)
-			{
-				log.error("Error playing custom sound: " + fileName, e);
-			}
-		}).start();
+		// AudioPlayer handles gain/volume scaling natively
+		if (volume > 0.0f)
+		{
+			audioPlayer.play(is, volume);
+		}
 	}
 }
