@@ -9,10 +9,6 @@ import net.runelite.client.config.ConfigManager;
 import net.runelite.client.eventbus.Subscribe;
 import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDescriptor;
-
-import javax.sound.sampled.LineUnavailableException;
-import javax.sound.sampled.UnsupportedAudioFileException;
-import java.io.IOException;
 import java.io.InputStream;
 import java.util.Set;
 
@@ -42,7 +38,8 @@ public class SillySpecsPlugin extends Plugin
 	}
 
 	@Subscribe
-	public void onSoundEffectPlayed(SoundEffectPlayed event) throws UnsupportedAudioFileException, LineUnavailableException, IOException {
+	public void onSoundEffectPlayed(SoundEffectPlayed event)
+	{
 		int soundId = event.getSoundId();
 		String fileName = null;
 		long lastTime = 0;
@@ -73,8 +70,8 @@ public class SillySpecsPlugin extends Plugin
 		else if (soundId == DBAXE_SPEC_ID) lastDbaxeTime = time;
 	}
 
-	private void playCustomSound(String fileName) throws UnsupportedAudioFileException, LineUnavailableException, IOException {
-		// AudioPlayer.play consumes the InputStream and handles its own buffering and volume
+	private void playCustomSound(String fileName)
+	{
 		InputStream is = getClass().getResourceAsStream("/" + fileName);
 		if (is == null)
 		{
@@ -84,10 +81,13 @@ public class SillySpecsPlugin extends Plugin
 
 		float volume = config.customVolume() / 100f;
 
-		// AudioPlayer handles gain/volume scaling natively
-		if (volume > 0.0f)
+		try
 		{
 			audioPlayer.play(is, volume);
+		}
+		catch (Exception e)
+		{
+			log.error("Failed to play sound: {}", fileName, e);
 		}
 	}
 }
