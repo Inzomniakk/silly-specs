@@ -9,7 +9,6 @@ import net.runelite.client.config.ConfigManager;
 import net.runelite.client.eventbus.Subscribe;
 import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDescriptor;
-import java.io.InputStream;
 import java.util.Set;
 
 @Slf4j
@@ -72,18 +71,11 @@ public class SillySpecsPlugin extends Plugin
 
 	private void playCustomSound(String fileName)
 	{
-		InputStream is = getClass().getResourceAsStream("/" + fileName);
-		if (is == null)
-		{
-			log.error("Could not find file: /{}", fileName);
-			return;
-		}
-
 		float volume = config.customVolume() / 100f;
 
 		try
 		{
-			audioPlayer.play(is, volume);
+			audioPlayer.play(getClass(), "/" + fileName, volume);
 		}
 		catch (Exception e)
 		{
